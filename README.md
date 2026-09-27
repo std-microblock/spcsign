@@ -1,58 +1,6 @@
 # spcsign
 
 A self-contained Authenticode signer for Windows PE files (EXE / DLL / SYS).
-It builds the PKCS#7 `SignedData` structure by hand — DER encoding, message
-digest, RSA signature, certificate table patching — with no dependency on
-`signtool.exe`, the Windows SDK, or any external timestamp server.
-
-```
-spcsign sign --cert MYCERT --chain ca-intermediate.cer --chain ca-cross.cer driver.sys
-signtool verify /kp driver.sys      → Successfully verified
-```
-
-## Why
-
-The usual alternatives are heavyweight or fragile:
-
-- `signtool.exe` requires the Windows SDK and an RFC 3161 timestamp server for
-  non-expiring signatures.
-- Forking / hooking a signing tool (API hooking of `mssign32`, faking system
-  time) is brittle and touches process internals.
-
-spcsign is a single .NET console project: given a code-signing certificate and
-a certificate chain, it produces a byte-accurate Authenticode signature that
-`wintrust` (and therefore `signtool verify /kp`, `/pa`, and driver loading)
-accepts. Timestamps come from a local TSA that the tool itself generates.
-
-## Authenticode details implemented here
-
-These are the parts that are easy to get wrong; each was reverse-engineered
-against signatures known to pass kernel-policy verification:
-
-- **Image hash — the skip model.** The digest covers the file linearly but
-  *skips* (not zeroes) the PE checksum field, the certificate-table data
-  directory entry, and everything from the certificate table to EOF. The COFF
-  symbol-table pointer/count and the symbol table itself are skipped too.
-- **Flat eContent.** Microsoft's `encapContentInfo` wraps the
-  `SpcIndirectDataContent` DER directly in an `[0] EXPLICIT` shell — there is
-  no OCTET STRING layer.
-- **messageDigest attribute** = hash of the *value part* of the
-  `SpcIndirectDataContent` SEQUENCE (its content bytes, without the TLV
-  header).
-- **Legacy PKCS#9 countersignature** (`1.2.840.113549.1.9.6`): the TSA
-  `SignerInfo` carries `contentType=id-data`, `signingTime` (UTCTime) and
-  `messageDigest = SHA-1(main signature)`, written in that non-DER-sorted
-  order, and is embedded as the unsigned attribute of the main signer. The
-  RFC 3161 `TSTInfo` format is *not* what `wintrust` looks for on the legacy
-  code paths.
-- **Empty opusInfo.** The `spcSpOpusInfo` attribute must carry an empty
-  SEQUENCE — a populated one (program name / URL) is rejected by the driver
-  verification path.
-- **Attribute order** matches legacy `mssign32` output (`opusInfo`,
-  `contentType`, `statementType`, `messageDigest`).
-- **Message certificate set** must include the signer chain *and* the TSA
-  certificates, so the verifier can resolve the countersigner from the PKCS#7
-  itself.
 
 ## Usage
 

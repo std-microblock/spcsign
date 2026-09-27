@@ -1,0 +1,13 @@
+# build output
+bin/
+obj/
+artifacts/
+
+# local TSA material (private keys) — regenerate with `spcsign init-tsa`
+tsa/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
